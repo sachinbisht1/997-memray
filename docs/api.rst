@@ -67,3 +67,66 @@ API Usage
     If you can live with these limitations, then ``AGGREGATED_ALLOCATIONS``
     results in much smaller capture files that can be used seamlessly with most
     reporters.
+
+Temporal allocation records
+---------------------------
+
+The :meth:`memray.FileReader.get_temporal_allocation_records` method provides
+access to the machine-readable allocation lifetime data used by Memray's
+temporal flamegraph reporter.
+
+It returns an iterable of :class:`memray.TemporalAllocationRecord` objects.
+Each record describes allocations associated with an allocation site and
+contains an ``intervals`` attribute containing :class:`memray.Interval` objects.
+
+.. autoclass:: memray.FileReader
+   :members: get_temporal_allocation_records
+
+.. autoclass:: memray.TemporalAllocationRecord
+
+.. autoclass:: memray.Interval
+
+Temporal allocation intervals
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each ``Interval`` describes the lifetime of one or more allocations between
+memory snapshots.
+
+The following fields are available:
+
+* ``allocated_before_snapshot`` -- the index of the snapshot boundary before
+  which the allocation was active.
+* ``deallocated_before_snapshot`` -- the index of the snapshot boundary before
+  which the allocation was deallocated, or ``None`` if the allocation remained
+  live through the end of the captured data.
+* ``n_allocations`` -- the number of allocations represented by the interval.
+* ``n_bytes`` -- the total number of bytes represented by the interval.
+
+The snapshot indices refer to the memory snapshots returned by
+``get_memory_snapshots``.
+
+Merging threads
+~~~~~~~~~~~~~~~
+
+:meth:`memray.FileReader.get_temporal_allocation_records` accepts a
+``merge_threads`` argument. By default, ``merge_threads`` is ``True``, allowing
+allocations from different threads to be represented together when they
+otherwise belong to the same temporal allocation record.
+
+Set ``merge_threads=False`` when thread-specific temporal allocation records
+are required.
+
+Open-ended lifetimes
+~~~~~~~~~~~~~~~~~~~~
+
+An interval with ``deallocated_before_snapshot`` set to ``None`` represents an
+allocation that was not deallocated before the captured data ended.
+
+These open-ended intervals are included in the temporal allocation records and
+can therefore be distinguished from allocations that were explicitly
+deallocated during the capture.
+
+The temporal allocation records are the machine-readable representation used
+by the temporal flamegraph reporter. The interval information therefore
+corresponds to the allocation lifetime data consumed when generating a
+temporal flamegraph.

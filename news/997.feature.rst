@@ -1,0 +1,1 @@
+Public temporal allocation records. The ``Interval`` and ``TemporalAllocationRecord`` classes are now part of Memray's public API.

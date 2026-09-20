@@ -15,6 +15,8 @@ import pytest
 from memray import AllocatorType
 from memray import FileFormat
 from memray import FileReader
+from memray import Interval
+from memray import TemporalAllocationRecord
 from memray import Tracker
 from memray._memray import compute_statistics
 from memray._test import MemoryAllocator
@@ -1829,6 +1831,40 @@ class TestMemorySnapshots:
         assert memory_snapshots
         assert len(memory_snapshots) <= n_snapshots // 2 + 1
         assert len(temporal_records) <= n_temporal_records // 2 + 1
+
+    def test_temporal_allocation_records_public_api(self, tmp_path):
+        # GIVEN
+        allocator = MemoryAllocator()
+        output = tmp_path / "test.bin"
+
+        # WHEN
+        with Tracker(output):
+            allocator.valloc(ALLOC_SIZE)
+            time.sleep(0.11)
+            allocator.free()
+
+        reader = FileReader(output)
+        memory_snapshots = list(reader.get_memory_snapshots())
+        temporal_records = list(reader.get_temporal_allocation_records())
+
+        # THEN
+        assert memory_snapshots
+        assert temporal_records
+
+        assert all(
+            isinstance(record, TemporalAllocationRecord) for record in temporal_records
+        )
+        assert all(
+            isinstance(interval, Interval)
+            for record in temporal_records
+            for interval in record.intervals
+        )
+
+        assert any(
+            interval.n_bytes >= ALLOC_SIZE
+            for record in temporal_records
+            for interval in record.intervals
+        )
 
     def test_temporary_allocations_when_filling_vector_without_preallocating(
         self, tmp_path

@@ -5,9 +5,11 @@ from ._memray import Destination
 from ._memray import FileDestination
 from ._memray import FileFormat
 from ._memray import FileReader
+from ._memray import Interval
 from ._memray import MemorySnapshot
 from ._memray import SocketDestination
 from ._memray import SocketReader
+from ._memray import TemporalAllocationRecord
 from ._memray import Tracker
 from ._memray import dump_all_records
 from ._memray import set_log_level
@@ -19,12 +21,14 @@ __all__ = [
     "AllocationRecord",
     "AllocatorType",
     "FileFormat",
+    "Interval",
     "MemorySnapshot",
     "dump_all_records",
     "start_thread_trace",
     "Tracker",
     "FileReader",
     "SocketReader",
+    "TemporalAllocationRecord",
     "Destination",
     "FileDestination",
     "SocketDestination",

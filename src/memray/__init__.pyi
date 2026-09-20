@@ -7,7 +7,9 @@ from ._memray import AllocationRecord as AllocationRecord
 from ._memray import AllocatorType as AllocatorType
 from ._memray import FileFormat as FileFormat
 from ._memray import FileReader as FileReader
+from ._memray import Interval as Interval
 from ._memray import MemorySnapshot as MemorySnapshot
 from ._memray import SocketReader as SocketReader
+from ._memray import TemporalAllocationRecord as TemporalAllocationRecord
 from ._memray import Tracker as Tracker
 from ._memray import dump_all_records as dump_all_records

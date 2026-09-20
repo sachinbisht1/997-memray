@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
 from memray import AllocatorType
+from memray import Interval
 from memray._memray import AllocationLifetimeAggregatorTestHarness
-from memray._memray import Interval
 
 CALLOC = AllocatorType.CALLOC
 FREE = AllocatorType.FREE
