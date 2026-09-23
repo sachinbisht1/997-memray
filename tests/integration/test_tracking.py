@@ -1812,11 +1812,11 @@ class TestMemorySnapshots:
         # WHEN
         with Tracker(output, memory_interval_ms=20):
             allocator.valloc(ALLOC_SIZE)
-            time.sleep(0.11)
+            time.sleep(1)
             allocator.free()
 
             allocator.valloc(ALLOC_SIZE)
-            time.sleep(0.11)
+            time.sleep(1)
 
         reader = FileReader(output)
         temporal_records = list(reader.get_temporal_allocation_records())
