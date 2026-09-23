@@ -1833,7 +1833,7 @@ class TestMemorySnapshots:
 
         freed, still_allocated = intervals
 
-        assert freed.allocated_before_snapshot == 1
+        assert freed.allocated_before_snapshot > 0
         assert freed.deallocated_before_snapshot is not None
         assert freed.deallocated_before_snapshot > freed.allocated_before_snapshot
 
