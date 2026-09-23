@@ -1804,6 +1804,42 @@ class TestMemorySnapshots:
             for prev, _next in zip(memory_snapshots, memory_snapshots[1:])
         )
 
+    def test_temporal_allocation_records_snapshot_indices(self, tmp_path):
+        # GIVEN
+        allocator = MemoryAllocator()
+        output = tmp_path / "test.bin"
+
+        # WHEN
+        with Tracker(output, memory_interval_ms=20):
+            allocator.valloc(ALLOC_SIZE)
+            time.sleep(0.11)
+            allocator.free()
+
+            allocator.valloc(ALLOC_SIZE)
+            time.sleep(0.11)
+
+        reader = FileReader(output)
+        temporal_records = list(reader.get_temporal_allocation_records())
+
+        # THEN
+        intervals = [
+            interval
+            for record in temporal_records
+            for interval in record.intervals
+            if interval.n_bytes >= ALLOC_SIZE
+        ]
+
+        assert len(intervals) == 2
+
+        freed, still_allocated = intervals
+
+        assert freed.allocated_before_snapshot == 1
+        assert freed.deallocated_before_snapshot == 6
+
+        assert still_allocated.allocated_before_snapshot == 6
+        assert still_allocated.deallocated_before_snapshot is None
+
+
     def test_memory_snapshots_limit_when_reading(self, tmp_path):
         # GIVEN
         allocator = MemoryAllocator()
