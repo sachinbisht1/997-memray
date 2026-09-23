@@ -1839,7 +1839,6 @@ class TestMemorySnapshots:
         assert still_allocated.allocated_before_snapshot == 6
         assert still_allocated.deallocated_before_snapshot is None
 
-
     def test_memory_snapshots_limit_when_reading(self, tmp_path):
         # GIVEN
         allocator = MemoryAllocator()
