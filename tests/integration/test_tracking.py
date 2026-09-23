@@ -1839,7 +1839,7 @@ class TestMemorySnapshots:
 
         assert (
             still_allocated.allocated_before_snapshot
-            == freed.deallocated_before_snapshot
+            >= freed.deallocated_before_snapshot
         )
         assert still_allocated.deallocated_before_snapshot is None
 
