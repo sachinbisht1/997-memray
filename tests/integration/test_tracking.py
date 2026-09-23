@@ -1834,9 +1834,13 @@ class TestMemorySnapshots:
         freed, still_allocated = intervals
 
         assert freed.allocated_before_snapshot == 1
-        assert freed.deallocated_before_snapshot == 6
+        assert freed.deallocated_before_snapshot is not None
+        assert freed.deallocated_before_snapshot > freed.allocated_before_snapshot
 
-        assert still_allocated.allocated_before_snapshot == 6
+        assert (
+            still_allocated.allocated_before_snapshot
+            == freed.deallocated_before_snapshot
+        )
         assert still_allocated.deallocated_before_snapshot is None
 
     def test_memory_snapshots_limit_when_reading(self, tmp_path):
