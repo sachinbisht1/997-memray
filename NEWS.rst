@@ -8,25 +8,6 @@ Changelog
 
 .. towncrier release notes start
 
-memray 99.99 (2026-09-20)
--------------------------
-
-Features
-~~~~~~~~
-
-- Reduce the time and memory needed to generate temporary-allocation reports from large capture files. (faster-temporary-aggregation)
-- Track individual allocations made by Apache Arrow 25.0 and newer when it uses mimalloc on Linux. (#943)
-- Public temporal allocation records. The ``Interval`` and ``TemporalAllocationRecord`` classes are now part of Memray's public API. (#997)
-
-
-Bug Fixes
-~~~~~~~~~
-
-- Use the public ``PyEval_SetProfileAllThreads`` API on Python 3.12, rather than walking the interpreter's thread list ourselves and calling a private CPython function for each thread state. (#1000)
-- Fix ``memray attach`` when Memray is built from source for the latest release candidates of Python 3.15. (#1014)
-- Avoid unnecessary native stack unwinding for object destruction events when tracking object lifetimes. (#1020)
-
-
 memray 1.20.0 (2026-08-07)
 --------------------------
 
