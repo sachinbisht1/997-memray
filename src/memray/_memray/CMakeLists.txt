@@ -21,6 +21,7 @@ add_library(
   compat.cpp
   hooks.cpp
   logging.cpp
+  memory.cpp
   native_resolver.cpp
   python_helpers.cpp
   record_reader.cpp

@@ -1,10 +1,15 @@
 #pragma once
+
+#include <memory>
 #include <vector>
 
+#include "memory.h"
 #include "records.h"
 
 namespace memray::tracking_api {
-class FrameTree
+
+template<template<typename> class Allocator = std::allocator>
+class BasicFrameTree
 {
   public:
     using index_t = size_t;
@@ -43,18 +48,25 @@ class FrameTree
     }
 
   private:
-    size_t getTraceIndexUnsafe(index_t parent_index, frame_id_t frame, const tracecallback_t& callback)
+    size_t getTraceIndexUnsafe(
+            index_t parent_index,
+            frame_id_t frame,
+            const tracecallback_t& callback)
     {
         Node& parent = d_graph[parent_index];
         auto it = std::lower_bound(parent.children.begin(), parent.children.end(), frame);
+
         if (it == parent.children.end() || it->frame_id != frame) {
             index_t new_index = d_graph.size();
             it = parent.children.insert(it, {frame, new_index});
+
             if (callback && !callback(frame, parent_index)) {
                 return 0;
             }
+
             d_graph.push_back({frame, parent_index});
         }
+
         return it->child_index;
     }
 
@@ -73,8 +85,14 @@ class FrameTree
     {
         frame_id_t frame_id;
         index_t parent_index;
-        std::vector<DescendentEdge> children;
+        std::vector<DescendentEdge, Allocator<DescendentEdge>> children;
     };
-    std::vector<Node> d_graph{{0, 0, {}}};
+
+    std::vector<Node, Allocator<Node>> d_graph{{0, 0, {}}};
 };
+
+using FrameTree = BasicFrameTree<>;
+
+using NativeFrameTree = BasicFrameTree<MmapAllocator>;
+
 }  // namespace memray::tracking_api

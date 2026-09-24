@@ -1,5 +1,5 @@
 from _memray.records cimport AllocationRecord
-from _memray.records cimport CodeObjectInfo
+from _memray.records cimport CodeObject
 from _memray.records cimport FileFormat
 from _memray.records cimport FramePop
 from _memray.records cimport FramePush
@@ -15,7 +15,6 @@ from _memray.sink cimport Sink
 from libcpp cimport bool
 from libcpp.memory cimport unique_ptr
 from libcpp.string cimport string
-from libcpp.utility cimport pair
 from libcpp.vector cimport vector
 
 
@@ -35,7 +34,7 @@ cdef extern from "compat.h" namespace "memray::compat":
 cdef extern from "record_writer.h" namespace "memray::tracking_api":
     cdef cppclass RecordWriter:
         bool writeRecord(const MemoryRecord& record) except+
-        bool writeRecord(const pair[code_object_id_t, CodeObjectInfo]& record) except+
+        bool writeRecord(code_object_id_t code_id, const CodeObject& code_obj) except+
         bool writeRecord(const UnresolvedNativeFrame& record) except+
         bool writeMappings(const vector[ImageSegments]& mappings) except+
         bool writeThreadSpecificRecord(thread_id_t tid, const FramePop& record) except+

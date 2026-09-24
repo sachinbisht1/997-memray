@@ -33,6 +33,12 @@ cdef extern from "records.h" namespace "memray::tracking_api":
        string filename
        string linetable
        int firstlineno
+   struct CodeObject:
+       const char* function_name
+       const char* filename
+       const char* linetable
+       size_t linetable_size
+       int firstlineno
 
    struct AllocationRecord:
        uintptr_t address

@@ -354,10 +354,12 @@ UsageHistory::UsageHistoryImpl::rebase(size_t new_peak)
     }
 }
 
+template<template<typename> class Allocator>
 UsageHistory::UsageHistoryImpl
 UsageHistory::recordContributionsToCompletedSnapshots(
         const std::vector<size_t>& highest_peak_by_snapshot,
-        std::vector<HistoricalContribution>& heap_contribution_by_snapshot) const
+        std::vector<HistoricalContribution, Allocator<HistoricalContribution>>&
+                heap_contribution_by_snapshot) const
 {
     size_t current_snapshot = highest_peak_by_snapshot.size();
     auto history = d_history;
@@ -474,7 +476,9 @@ UsageHistory::contributionsBySnapshot(
         size_t current_peak) const
 {
     size_t current_snapshot = highest_peak_by_snapshot.size();
-    auto ret = d_heap_contribution_by_snapshot;
+    std::vector<HistoricalContribution> ret(
+            d_heap_contribution_by_snapshot.begin(),
+            d_heap_contribution_by_snapshot.end());
 
     auto final = d_history;
     if (final.last_known_snapshot < current_snapshot) {

@@ -276,13 +276,15 @@ class PythonStackTracker
     int pushPythonFrame(PyFrameObject* frame);
     void popPythonFrame();
 
+    using Stack = std::vector<LazilyEmittedFrame, MmapAllocator<LazilyEmittedFrame>>;
+
     static std::mutex s_mutex;
-    static std::unordered_map<PyThreadState*, std::vector<LazilyEmittedFrame>> s_initial_stack_by_thread;
+    static std::unordered_map<PyThreadState*, Stack> s_initial_stack_by_thread;
     static std::atomic<unsigned int> s_tracker_generation;
 
     uint32_t d_num_pending_pops{};
     uint32_t d_tracker_generation{};
-    std::vector<LazilyEmittedFrame>* d_stack{};
+    Stack* d_stack{};
     bool d_greenlet_hooks_installed{};
 };
 
@@ -290,7 +292,7 @@ bool PythonStackTracker::s_greenlet_tracking_enabled{false};
 bool PythonStackTracker::s_native_tracking_enabled{false};
 
 std::mutex PythonStackTracker::s_mutex;
-std::unordered_map<PyThreadState*, std::vector<PythonStackTracker::LazilyEmittedFrame>>
+std::unordered_map<PyThreadState*, PythonStackTracker::Stack>
         PythonStackTracker::s_initial_stack_by_thread;
 std::atomic<unsigned int> PythonStackTracker::s_tracker_generation;
 
@@ -404,7 +406,7 @@ PythonStackTracker::reloadStackIfTrackerChanged()
     }
     d_num_pending_pops = 0;
 
-    std::vector<LazilyEmittedFrame> correct_stack;
+    PythonStackTracker::Stack correct_stack;
 
     {
         std::unique_lock<std::mutex> lock(s_mutex);
@@ -484,7 +486,7 @@ PythonStackTracker::pushLazilyEmittedFrame(const LazilyEmittedFrame& frame)
     // Note: this function does not require the GIL.
     struct StackCreator
     {
-        std::vector<LazilyEmittedFrame> stack;
+        PythonStackTracker::Stack stack;
 
         StackCreator()
         {
@@ -743,7 +745,7 @@ PythonStackTracker::recordAllStacks(Tracker& tracker)
     PyThreadState* current_thread = PyThreadState_Get();
 
     // Record the current Python stack of every thread
-    std::unordered_map<PyThreadState*, std::vector<LazilyEmittedFrame>> stack_by_thread;
+    std::unordered_map<PyThreadState*, PythonStackTracker::Stack> stack_by_thread;
     for (PyThreadState* tstate =
                  PyInterpreterState_ThreadHead(compat::threadStateGetInterpreter(current_thread));
          tstate != nullptr;
@@ -759,7 +761,8 @@ PythonStackTracker::recordAllStacks(Tracker& tracker)
             continue;
         }
 
-        stack_by_thread[tstate] = pythonFrameToStack(frame, tracker);
+        auto stack = pythonFrameToStack(frame, tracker);
+        stack_by_thread[tstate] = PythonStackTracker::Stack(stack.begin(), stack.end());
         if (PyErr_Occurred()) {
             throw std::runtime_error("Failed to capture a thread's Python stack");
         }
@@ -831,7 +834,7 @@ Tracker::Tracker(
         // rounds of TLS destruction if destructors call pthread_setspecific.
         // Note: If this raises an exception, the call_once can be retried.
         if (0 != pthread_key_create(&s_native_unwind_vector_key, [](void* data) {
-                delete static_cast<std::vector<NativeTrace::ip_t>*>(data);
+                delete static_cast<MmapNativeTrace::data_t*>(data);
             }))
         {
             throw std::runtime_error{"Failed to create pthread key"};
@@ -1152,7 +1155,7 @@ Tracker::trackAllocationImpl(
         void* ptr,
         size_t size,
         hooks::Allocator func,
-        const std::optional<NativeTrace>& trace)
+        const std::optional<MmapNativeTrace>& trace)
 {
     registerCachedThreadName();
     PythonStackTracker::get().emitPendingPushesAndPops();
@@ -1193,7 +1196,7 @@ Tracker::trackDeallocationImpl(void* ptr, size_t size, hooks::Allocator func)
 }
 
 void
-Tracker::trackObjectImpl(PyObject* obj, int event, const std::optional<NativeTrace>& trace)
+Tracker::trackObjectImpl(PyObject* obj, int event, const std::optional<MmapNativeTrace>& trace)
 {
     registerCachedThreadName();
     PythonStackTracker::get().emitPendingPushesAndPops();
@@ -1414,15 +1417,7 @@ Tracker::registerCodeObject(PyCodeObject* code_ptr, const CodeObject& code_obj)
     d_code_object_cache[code_ptr] = code_id;
 
     // Write the code object record
-    pycode_map_val_t code_record{
-            code_id,
-            CodeObjectInfo{
-                    code_obj.function_name,
-                    code_obj.filename,
-                    std::string(code_obj.linetable, code_obj.linetable_size),
-                    code_obj.firstlineno}};
-
-    if (!d_writer->writeRecord(code_record)) {
+    if (!d_writer->writeRecord(code_id, code_obj)) {
         std::cerr << "memray: Failed to write code object record, deactivating tracking" << std::endl;
         deactivate();
     }

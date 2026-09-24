@@ -76,7 +76,7 @@ class StreamingRecordWriter : public RecordWriter
     void operator=(StreamingRecordWriter&&) = delete;
 
     bool writeRecord(const MemoryRecord& record) override;
-    bool writeRecord(const pycode_map_val_t& item) override;
+    bool writeRecord(code_object_id_t code_id, const CodeObject& code_obj) override;
     bool writeRecord(const UnresolvedNativeFrame& record) override;
 
     bool writeMappings(const std::vector<ImageSegments>& mappings) override;
@@ -142,7 +142,7 @@ class AggregatingRecordWriter : public RecordWriter
     void operator=(AggregatingRecordWriter&&) = delete;
 
     bool writeRecord(const MemoryRecord& record) override;
-    bool writeRecord(const pycode_map_val_t& item) override;
+    bool writeRecord(code_object_id_t code_id, const CodeObject& code_obj) override;
     bool writeRecord(const UnresolvedNativeFrame& record) override;
 
     bool writeMappings(const std::vector<ImageSegments>& mappings) override;
@@ -161,21 +161,60 @@ class AggregatingRecordWriter : public RecordWriter
 
   private:
     // Aliases
-    using python_stack_ids_t = std::vector<FrameTree::index_t>;
-    using python_stack_ids_by_tid = std::unordered_map<thread_id_t, python_stack_ids_t>;
+    using python_stack_ids_t =
+            std::vector<FrameTree::index_t, MmapAllocator<FrameTree::index_t>>;
+    using python_stack_ids_by_tid =
+            std::unordered_map<
+                    thread_id_t,
+                    python_stack_ids_t,
+                    std::hash<thread_id_t>,
+                    std::equal_to<thread_id_t>,
+                    MmapAllocator<std::pair<const thread_id_t, python_stack_ids_t>>>;
+
+    struct MmapCodeObjectInfo
+    {
+        MmapString function_name;
+        MmapString filename;
+        MmapString linetable;
+        int firstlineno;
+    };
+
+    using CodeObjectsById =
+            std::unordered_map<
+                    code_object_id_t,
+                    MmapCodeObjectInfo,
+                    std::hash<code_object_id_t>,
+                    std::equal_to<code_object_id_t>,
+                    MmapAllocator<std::pair<const code_object_id_t, MmapCodeObjectInfo>>>;
+
+    using ThreadNamesByTid =
+            std::unordered_map<
+                    thread_id_t,
+                    MmapString,
+                    std::hash<thread_id_t>,
+                    std::equal_to<thread_id_t>,
+                    MmapAllocator<std::pair<const thread_id_t, MmapString>>>;
+
+    using SurvivingObjects =
+            std::unordered_map<
+                    uintptr_t,
+                    frame_id_t,
+                    std::hash<uintptr_t>,
+                    std::equal_to<uintptr_t>,
+                    MmapAllocator<std::pair<const uintptr_t, frame_id_t>>>;
 
     // Data members
     HeaderRecord d_header;
     TrackerStats d_stats;
-    Registry<Frame> d_python_frame_registry;
-    std::unordered_map<code_object_id_t, CodeObjectInfo> d_code_objects_by_id;
-    std::vector<UnresolvedNativeFrame> d_native_frames{};
+    Registry<Frame, MmapAllocator> d_python_frame_registry;
+    CodeObjectsById d_code_objects_by_id;
+    std::vector<UnresolvedNativeFrame, MmapAllocator<UnresolvedNativeFrame>> d_native_frames{};
     std::vector<std::vector<ImageSegments>> d_mappings_by_generation{};
     std::vector<MemorySnapshot> d_memory_snapshots;
-    std::unordered_map<thread_id_t, std::string> d_thread_name_by_tid;
-    FrameTree d_python_frame_tree;
+    ThreadNamesByTid d_thread_name_by_tid;
+    NativeFrameTree d_python_frame_tree;
     python_stack_ids_by_tid d_python_stack_ids_by_thread;
-    std::unordered_map<uintptr_t, frame_id_t> d_surviving_objects;
+    SurvivingObjects d_surviving_objects;
     DeltaEncodedFields d_last;
     api::HighWaterMarkAggregator d_high_water_mark_aggregator;
 };
@@ -268,14 +307,14 @@ StreamingRecordWriter::writeRecord(const MemoryRecord& record)
 }
 
 bool
-StreamingRecordWriter::writeRecord(const pycode_map_val_t& item)
+StreamingRecordWriter::writeRecord(code_object_id_t code_id, const CodeObject& code_obj)
 {
     auto token = static_cast<unsigned char>(RecordType::CODE_OBJECT);
-    return writeSimpleType(token) && writeVarint(item.first)
-           && writeString(item.second.function_name.c_str()) && writeString(item.second.filename.c_str())
-           && writeIntegralDelta(&d_last.code_firstlineno, item.second.firstlineno)
-           && writeVarint(item.second.linetable.size())
-           && d_sink->writeAll(item.second.linetable.data(), item.second.linetable.size());
+    return writeSimpleType(token) && writeVarint(code_id)
+           && writeString(code_obj.function_name) && writeString(code_obj.filename)
+           && writeIntegralDelta(&d_last.code_firstlineno, code_obj.firstlineno)
+           && writeVarint(code_obj.linetable_size)
+           && d_sink->writeAll(code_obj.linetable, code_obj.linetable_size);
 }
 
 bool
@@ -740,11 +779,15 @@ AggregatingRecordWriter::writeRecord(const MemoryRecord& record)
 }
 
 bool
-AggregatingRecordWriter::writeRecord(const pycode_map_val_t& item)
+AggregatingRecordWriter::writeRecord(code_object_id_t code_id, const CodeObject& code_obj)
 {
-    // For aggregating writer, we'll store code objects in a map
-    const auto& [code_id, code_info] = item;
-    d_code_objects_by_id.emplace(code_id, code_info);
+    MmapCodeObjectInfo code_info{
+            MmapString(code_obj.function_name),
+            MmapString(code_obj.filename),
+            MmapString(code_obj.linetable, code_obj.linetable_size),
+            code_obj.firstlineno};
+
+    d_code_objects_by_id.emplace(code_id, std::move(code_info));
     return true;
 }
 

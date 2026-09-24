@@ -128,6 +128,7 @@ python_add_library(_memray MODULE WITH_SOABI
     src/memray/_memray/tracking_api.cpp
     src/memray/_memray/${BINARY_FORMAT}_shenanigans.cpp
     src/memray/_memray/logging.cpp
+    src/memray/_memray/memory.cpp
     src/memray/_memray/python_helpers.cpp
     src/memray/_memray/source.cpp
     src/memray/_memray/sink.cpp

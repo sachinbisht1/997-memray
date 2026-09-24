@@ -28,6 +28,7 @@
 
 #include "frame_tree.h"
 #include "hooks.h"
+#include "memory.h"
 #include "linker_shenanigans.h"
 #include "record_writer.h"
 #include "records.h"
@@ -136,12 +137,14 @@ install_trace_function();
 void
 set_up_pthread_fork_handlers();
 
-class NativeTrace
+template<template<typename> class Allocator = std::allocator>
+class BasicNativeTrace
 {
   public:
     using ip_t = frame_id_t;
+    using data_t = std::vector<ip_t, Allocator<ip_t>>;
 
-    NativeTrace(std::vector<ip_t>& data)
+    BasicNativeTrace(data_t& data)
     : d_data(data)
     {
     }
@@ -213,8 +216,11 @@ class NativeTrace
   private:
     size_t d_size = 0;
     size_t d_skip = 0;
-    std::vector<ip_t>& d_data;
+    data_t& d_data;
 };
+
+using NativeTrace = BasicNativeTrace<>;
+using MmapNativeTrace = BasicNativeTrace<MmapAllocator>;
 
 /**
  * Singleton managing all the global state and functionality of the tracing mechanism
@@ -256,7 +262,7 @@ class Tracker
         }
         RecursionGuard guard;
 
-        std::optional<NativeTrace> trace{std::nullopt};
+        std::optional<MmapNativeTrace> trace{std::nullopt};
         if (Tracker::areNativeTracesEnabled()) {
             if (!prepareNativeTrace(trace)) {
                 return;
@@ -280,7 +286,7 @@ class Tracker
         }
         RecursionGuard guard;
 
-        std::optional<NativeTrace> trace{std::nullopt};
+        std::optional<MmapNativeTrace> trace{std::nullopt};
         // Only creation events store native stacks.
         if (event == 0 && Tracker::areNativeTracesEnabled()) {
             if (!prepareNativeTrace(trace)) {
@@ -297,20 +303,24 @@ class Tracker
         }
     }
 
-    static inline bool prepareNativeTrace(std::optional<NativeTrace>& trace)
+    static inline bool prepareNativeTrace(std::optional<MmapNativeTrace>& trace)
     {
-        auto t_trace_data_ptr = static_cast<std::vector<NativeTrace::ip_t>*>(
+        auto t_trace_data_ptr = static_cast<MmapNativeTrace::data_t*>(
                 pthread_getspecific(s_native_unwind_vector_key));
+
         if (!t_trace_data_ptr) {
-            t_trace_data_ptr = new std::vector<NativeTrace::ip_t>();
+            t_trace_data_ptr = new MmapNativeTrace::data_t();
+
             if (pthread_setspecific(s_native_unwind_vector_key, t_trace_data_ptr) != 0) {
                 Tracker::deactivate();
                 std::cerr << "memray: pthread_setspecific failed" << std::endl;
                 delete t_trace_data_ptr;
                 return false;
             }
+
             t_trace_data_ptr->resize(128);
         }
+
         trace.emplace(*t_trace_data_ptr);
         return true;
     }
@@ -441,7 +451,7 @@ class Tracker
     static std::atomic<Tracker*> s_instance;
 
     std::shared_ptr<RecordWriter> d_writer;
-    FrameTree d_native_trace_tree;
+    NativeFrameTree d_native_trace_tree;
     const bool d_unwind_native_frames;
     const unsigned int d_memory_interval;
     const bool d_follow_fork;
@@ -450,10 +460,34 @@ class Tracker
     linker::SymbolPatcher d_patcher;
     std::unique_ptr<BackgroundThread> d_background_thread;
 
-    std::unordered_map<PyCodeObject*, code_object_id_t> d_code_object_cache;
+    using CodeObjectCache =
+            std::unordered_map<
+                    PyCodeObject*,
+                    code_object_id_t,
+                    std::hash<PyCodeObject*>,
+                    std::equal_to<PyCodeObject*>,
+                    MmapAllocator<std::pair<PyCodeObject* const, code_object_id_t>>>;
+
+    using CachedThreadNames =
+            std::unordered_map<
+                    uint64_t,
+                    MmapString,
+                    std::hash<uint64_t>,
+                    std::equal_to<uint64_t>,
+                    MmapAllocator<std::pair<const uint64_t, MmapString>>>;
+
+    CodeObjectCache d_code_object_cache;
     code_object_id_t d_next_code_object_id{1};
-    std::unordered_map<uint64_t, std::string> d_cached_thread_names;
-    std::unordered_set<PyObject*> d_tracked_objects;
+    CachedThreadNames d_cached_thread_names;
+
+    using TrackedObjects =
+            std::unordered_set<
+                    PyObject*,
+                    std::hash<PyObject*>,
+                    std::equal_to<PyObject*>,
+                    MmapAllocator<PyObject*>>;
+
+    TrackedObjects d_tracked_objects;
 
     // Methods
     static size_t computeMainTidSkip();
@@ -462,9 +496,9 @@ class Tracker
             void* ptr,
             size_t size,
             hooks::Allocator func,
-            const std::optional<NativeTrace>& trace);
+            const std::optional<MmapNativeTrace>& trace);
     void trackDeallocationImpl(void* ptr, size_t size, hooks::Allocator func);
-    void trackObjectImpl(PyObject* obj, int event, const std::optional<NativeTrace>& trace);
+    void trackObjectImpl(PyObject* obj, int event, const std::optional<MmapNativeTrace>& trace);
     void invalidate_module_cache_impl();
     void updateModuleCacheImpl();
     void registerThreadNameImpl(const char* name);

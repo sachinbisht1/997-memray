@@ -1942,17 +1942,17 @@ cdef class RecordWriterTestHarness:
         int firstlineno,
     ) -> bool:
         """Write a code object record to the file."""
-        return self._writer.get().writeRecord(
-            pair[records.code_object_id_t, records.CodeObjectInfo](
-                id,
-                records.CodeObjectInfo(
-                    function_name.encode(),
-                    filename.encode(),
-                    linetable,
-                    firstlineno,
-                )
-            )
-        )
+        cdef records.CodeObject code_obj
+        cdef bytes function_name_bytes = function_name.encode()
+        cdef bytes filename_bytes = filename.encode()
+
+        code_obj.function_name = function_name_bytes
+        code_obj.filename = filename_bytes
+        code_obj.linetable = linetable
+        code_obj.linetable_size = len(linetable)
+        code_obj.firstlineno = firstlineno
+
+        return self._writer.get().writeRecord(id, code_obj)
 
     @staticmethod
     def get_linetable(code_object):

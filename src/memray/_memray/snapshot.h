@@ -68,11 +68,12 @@ struct Interval
     uintptr_t end;
 };
 
-template<typename T>
+template<typename T, template<typename> class Allocator = std::allocator>
 class IntervalTree
 {
   private:
-    using intervals_t = std::vector<std::pair<Interval, T>>;
+    using value_type = std::pair<Interval, T>;
+    using intervals_t = std::vector<value_type, Allocator<value_type>>;
     intervals_t d_intervals;
 
   public:
@@ -90,9 +91,9 @@ class IntervalTree
     struct RemovalStats
     {
         size_t total_freed_bytes;
-        std::vector<std::pair<Interval, T>> freed_allocations;
-        std::vector<std::pair<Interval, T>> shrunk_allocations;
-        std::vector<std::pair<Interval, T>> split_allocations;
+        std::vector<value_type, Allocator<value_type>> freed_allocations;
+        std::vector<value_type, Allocator<value_type>> shrunk_allocations;
+        std::vector<value_type, Allocator<value_type>> split_allocations;
     };
 
     RemovalStats removeInterval(uintptr_t start, size_t size)
@@ -103,7 +104,7 @@ class IntervalTree
             return stats;
         }
 
-        std::vector<std::pair<Interval, T>> new_intervals;
+        std::vector<value_type, Allocator<value_type>> new_intervals;
         new_intervals.reserve(d_intervals.size() + 1);  // We create at most 1 new interval.
         const auto removed_interval = Interval(start, start + size);
 
@@ -252,7 +253,7 @@ class HighWatermarkFinder
     size_t d_current_memory{0};
     size_t d_allocations_seen{0};
     std::unordered_map<uintptr_t, size_t> d_ptr_to_allocation_size{};
-    IntervalTree<Allocation> d_mmap_intervals;
+    IntervalTree<Allocation, MmapAllocator> d_mmap_intervals;
 };
 
 // Like LocationKey, but considers the native_segment_generation and the
@@ -308,6 +309,10 @@ struct HistoricalContribution
 
 class UsageHistory
 {
+  private:
+    using HistoricalContributionHistory =
+            std::vector<HistoricalContribution, MmapAllocator<HistoricalContribution>>;
+
   public:
     void recordUsageDelta(
             const std::vector<size_t>& highest_peak_by_snapshot,
@@ -351,12 +356,14 @@ class UsageHistory
     };
 
     UsageHistoryImpl d_history{};
-    std::vector<HistoricalContribution> d_heap_contribution_by_snapshot;
+    HistoricalContributionHistory d_heap_contribution_by_snapshot;
 
     // Append records for already-completed snapshots to the given vector.
+    template<template<typename> class Allocator>
     UsageHistoryImpl recordContributionsToCompletedSnapshots(
             const std::vector<size_t>& highest_peak_by_snapshot,
-            std::vector<HistoricalContribution>& heap_contribution_by_snapshot) const;
+            std::vector<HistoricalContribution, Allocator<HistoricalContribution>>&
+                    heap_contribution_by_snapshot) const;
 };
 
 struct AllocationLifetime
@@ -400,14 +407,26 @@ class HighWaterMarkAggregator
 
     // Information about allocations and deallocations, aggregated by location.
     using UsageHistoryByLocation =
-            std::unordered_map<HighWaterMarkLocationKey, UsageHistory, HighWaterMarkLocationKeyHash>;
+            std::unordered_map<
+                    HighWaterMarkLocationKey,
+                    UsageHistory,
+                    HighWaterMarkLocationKeyHash,
+                    std::equal_to<HighWaterMarkLocationKey>,
+                    MmapAllocator<std::pair<const HighWaterMarkLocationKey, UsageHistory>>>;
     UsageHistoryByLocation d_usage_history_by_location;
 
     // Simple allocations contributing to the current heap size.
-    std::unordered_map<uintptr_t, Allocation> d_ptr_to_allocation;
+    using AllocationByAddress =
+            std::unordered_map<
+                    uintptr_t,
+                    Allocation,
+                    std::hash<uintptr_t>,
+                    std::equal_to<uintptr_t>,
+                    MmapAllocator<std::pair<const uintptr_t, Allocation>>>;
+    AllocationByAddress d_ptr_to_allocation;
 
     // Ranged allocations contributing to the current heap size.
-    IntervalTree<Allocation> d_mmap_intervals;
+    IntervalTree<Allocation, MmapAllocator> d_mmap_intervals;
 
     UsageHistory& getUsageHistory(const Allocation& allocation);
     void recordUsageDelta(const Allocation& allocation, size_t count_delta, size_t bytes_delta);

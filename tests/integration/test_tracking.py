@@ -382,6 +382,57 @@ def test_no_allocations(tmpdir):
     assert not records
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="LD_PRELOAD allocator guard is Linux-specific")
+def test_hook_reachable_storage_does_not_use_process_allocator(tmp_path):
+    # GIVEN
+    output = tmp_path / "test.bin"
+    guard_source = Path(__file__).parent / "allocator_guard" / "allocator_guard.c"
+    guard_library = tmp_path / "allocator_guard.so"
+
+    subprocess.run(
+        [
+            "gcc",
+            "-shared",
+            "-fPIC",
+            "-o",
+            str(guard_library),
+            str(guard_source),
+            "-ldl",
+        ],
+        check=True,
+    )
+
+    subprocess_code = textwrap.dedent(
+        f"""
+        import ctypes
+        from memray import Tracker
+
+        guard = ctypes.CDLL("{guard_library}")
+        guard.memray_allocator_guard_mmap.argtypes = [ctypes.c_size_t]
+        guard.memray_allocator_guard_mmap.restype = ctypes.c_int
+
+        with Tracker("{output}"):
+            for size in (4096, 8192, 16384, 32768, 65536):
+                assert guard.memray_allocator_guard_mmap(size) == 0
+        """
+    )
+
+    env = os.environ.copy()
+    env["LD_PRELOAD"] = str(guard_library)
+
+    # WHEN
+    process = subprocess.run(
+        [sys.executable, "-c", subprocess_code],
+        timeout=10,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    # THEN
+    assert process.returncode == 0, process.stderr
+
+
 def test_unsupported_operations_on_aggregated_capture(tmpdir):
     """Verify that we can successfully read a file that has no allocations."""
     # GIVEN
